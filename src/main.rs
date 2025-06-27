@@ -1,6 +1,6 @@
 use rand::Rng;
-use num_bigint::{BigUint, RandBigInt, RandomBits};
-use num_traits::{ConstZero, FromPrimitive, One};
+use num_bigint::{BigUint, RandBigInt};
+use num_traits::{FromPrimitive, One, Pow, Zero, ToPrimitive};
 use num_primes::Generator;
 
 use std::fs::File;
@@ -21,7 +21,7 @@ pub struct DGHV {
 impl DGHV {
     pub fn initialise(lambda: u32, rho: u32, eta: u32, gamma: u32, tau: u32) -> Self {
         // Initialises a DGHV scheme with the given parameters.
-        DGHV {lambda, rho, eta, gamma, tau, public_key: Vec::new(), secret_key: BigUint::ZERO}
+        DGHV {lambda, rho, eta, gamma, tau, public_key: Vec::new(), secret_key: BigUint::zero()}
     }
 
     // KeyGen
@@ -51,7 +51,7 @@ impl DGHV {
         loop {
              pk.clear();
 
-            let mut max: BigUint = BigUint::ZERO;
+            let mut max: BigUint = BigUint::zero();
             let mut max_i: usize = 0;
             for i in 0..self.tau {
                 let q_i: BigUint = rng.gen_biguint_below(&q_bound);
@@ -67,24 +67,38 @@ impl DGHV {
             }
 
             // make sure x_0 is odd
-            if &max % BigUint::from_u8(2).unwrap() == BigUint::ZERO {
+            if &max % BigUint::from_u8(2).unwrap() == BigUint::zero() {
                 max += BigUint::one();
             }
 
-            // make sure [x_0]p is even
-            let x0_modp: BigUint = &max % secret_key;
-            let x0_modp_centered: BigUint;
-            if x0_modp > secret_key / &BigUint::from(2u8) {
-                x0_modp_centered = x0_modp - secret_key;
+            // make sure [x_0]p (centered) is even
+            // max is the current candidate for pk[0]
+            // max itself is already ensured to be odd by prior code.
+            let two = BigUint::from_u8(2).unwrap(); // Define two if not in scope, or use BigUint::from(2u8).unwrap()
+            let x0_candidate_mod_p = &max % secret_key; // This is in [0, p-1]
+            let p_div_2 = secret_key / &two;
+
+            let centered_x0_parity: BigUint;
+            if x0_candidate_mod_p > p_div_2 {
+                // Centered value is x0_candidate_mod_p - secret_key (conceptually negative)
+                // Parity is ( (x0_candidate_mod_p % 2) + (secret_key % 2) ) % 2
+                // Since secret_key is an odd prime, secret_key % 2 is 1.
+                // Parity is ( (x0_candidate_mod_p % 2) + 1 ) % 2
+                centered_x0_parity = ( (&x0_candidate_mod_p % &two) + BigUint::one() ) % &two;
             } else {
-                x0_modp_centered = x0_modp;
+                // Centered value is x0_candidate_mod_p (non-negative)
+                // Parity is x0_candidate_mod_p % 2
+                centered_x0_parity = &x0_candidate_mod_p % &two;
             }
 
-            if &x0_modp_centered % BigUint::from_u8(2).unwrap() == BigUint::one() {
-                pk.swap(max_i, 0);
-                break;
+            // The comment says "make sure [x_0]p is even".
+            // So, if centered_x0_parity is zero (even), we are good.
+            if centered_x0_parity == BigUint::zero() {
+                pk.swap(max_i, 0); // Place the conforming 'max' at pk[0]
+                break; // Condition met, exit loop.
             }
-            
+            // If centered_x0_parity is one (odd), the condition is not met.
+            // The loop will continue to generate a new set of pk elements.
         }
         pk
     }
@@ -101,7 +115,7 @@ impl DGHV {
         }
 
         let mut rng = rand::thread_rng();
-        let mut ciphertext = BigUint::ZERO;
+        let mut ciphertext = BigUint::zero();
 
         // TODO: check if correct.
         // Subset choice
@@ -126,6 +140,32 @@ impl DGHV {
 
         Some(ciphertext) // Return the calculated ciphertext
     }
+
+    pub fn decrypt(&self, ciphertext: BigUint) -> u8 {
+        let two = BigUint::from_u8(2).unwrap();
+        let p = &self.secret_key;
+
+        let c_mod_p = &ciphertext % p; // c_mod_p is in [0, p-1]
+
+        // Determine the message bit by considering the centered remainder
+        let p_div_2 = p / &two;
+        let mut m_prime = &c_mod_p % &two; // m' = (c_mod_p) mod 2
+
+        // If c_mod_p > p/2, it means the "effective" remainder (c_mod_p - p) was negative.
+        // Since p is odd, (c_mod_p - p) mod 2 flips the bit compared to (c_mod_p) mod 2.
+        if c_mod_p > p_div_2 {
+            m_prime = if m_prime == BigUint::zero() {
+                BigUint::one()
+            } else {
+                BigUint::zero()
+            };
+        }
+
+        m_prime.to_u8().unwrap_or_else(|| {
+            eprintln!("[WARN]: Decrypted message_bit could not be converted to u8. Defaulting to 0.");
+            0
+        })
+    }
 }
 
 fn main() -> io::Result<()> {
@@ -147,5 +187,39 @@ fn main() -> io::Result<()> {
     for (i, component) in dghv_scheme.public_key.iter().enumerate() {
         writeln!(file, "x_{}: {}", i, component)?;
     }
+    println!("Public key saved to {}", public_key_filepath);
+
+    // Basic Encryption/Decryption Test
+    println!("\nTesting encryption and decryption...");
+
+    let message0: u8 = 0;
+    match dghv_scheme.encrypt(message0) {
+        Some(ciphertext0) => {
+            let decrypted0 = dghv_scheme.decrypt(ciphertext0);
+            println!("Original: {}, Encrypted then Decrypted: {}", message0, decrypted0);
+            assert_eq!(message0, decrypted0, "Test failed: Decrypt(Encrypt(0)) did not return 0.");
+        }
+        None => {
+            eprintln!("Encryption of 0 returned None, test failed.");
+            // Consider panicking here or returning an error from main
+            return Err(io::Error::new(io::ErrorKind::Other, "Encryption of 0 failed"));
+        }
+    }
+
+    let message1: u8 = 1;
+    match dghv_scheme.encrypt(message1) {
+        Some(ciphertext1) => {
+            let decrypted1 = dghv_scheme.decrypt(ciphertext1);
+            println!("Original: {}, Encrypted then Decrypted: {}", message1, decrypted1);
+            assert_eq!(message1, decrypted1, "Test failed: Decrypt(Encrypt(1)) did not return 1.");
+        }
+        None => {
+            eprintln!("Encryption of 1 returned None, test failed.");
+            return Err(io::Error::new(io::ErrorKind::Other, "Encryption of 1 failed"));
+        }
+    }
+
+    println!("Basic encryption and decryption tests passed!");
+
     Ok(())
 }
