@@ -1,6 +1,6 @@
 use rand::Rng;
 use num_bigint::{BigUint, RandBigInt, RandomBits};
-use num_traits::{ConstZero, FromPrimitive, One, Pow, Zero};
+use num_traits::{ConstZero, FromPrimitive, ToPrimitive, One, Pow, Zero};
 use num_primes::Generator;
 
 use std::fs::File;
@@ -26,22 +26,17 @@ impl DGHV {
 
     // KeyGen
     pub fn generate_keys(&mut self) {
-        // Generates the key pair (sk, pk) of the scheme.
 
         self.secret_key = self.generate_secret_key();
         self.public_key = self.generate_public_key(&self.secret_key);
     }
 
     fn generate_secret_key(&self) -> BigUint {
-        // Generates the secret key
-        let p = Generator::new_prime(self.eta as usize);
-        p
+        return Generator::new_prime(self.eta as usize);
     }
 
     fn generate_public_key(&self, secret_key: &BigUint) -> Vec<BigUint> {
-        // Generates the public key.
-        //      1. 
-        
+       
         let mut rng = rand::thread_rng();
         let mut pk: Vec<BigUint> = Vec::with_capacity(self.tau as usize);
 
@@ -84,68 +79,98 @@ impl DGHV {
                 pk.swap(max_i, 0);
                 break;
             }
-            
         }
         pk
     }
 
     // Encrypt & Decrypt
     pub fn encrypt(&self, message_bit: u8) -> Option<BigUint> {
-        // Encrypts a message bit.
-        // Returns None if the message bit is invalid.
 
-        // 1. Validate the message bit.
+        // message bit validation
         if message_bit > 1 {
             eprintln!("[ERROR]: message_bit should be 0 or 1 - not {}", message_bit);
             return None;
         }
-
+        
         let mut rng = rand::thread_rng();
         let mut ciphertext = BigUint::zero();
 
-        // TODO: check if correct.
-        // Subset choice
+        let two = BigUint::from_u8(2).unwrap();
+        let message_as_biguint = BigUint::from_u8(message_bit).unwrap();
+        
+        let r_bound = BigUint::from(2u8).pow(self.rho);
+        let r = rng.gen_biguint_below(&r_bound);
+
+        // actual ciphertext
         for x_i in &self.public_key {
             if rng.gen_bool(0.5) {
                 ciphertext += x_i;
             }
-        }
+        }        
 
-        // 3. Generate a small random noise 'r'.
-        // r is typically chosen from [0, 2^rho) or (-2^rho, 2^rho).
-        // For BigUint, we'll generate a non-negative r in [0, 2^rho).
-        let r_bound = BigUint::from(2u8).pow(self.rho);
-        let r = rng.gen_biguint_below(&r_bound);
+        ciphertext += &two * r;
+        ciphertext += message_as_biguint;
 
-        // 4. Calculate the final ciphertext: c = (sum of x_i in subset) + 2*r + message_bit
-        let two = BigUint::from_u8(2).unwrap();
-        let message_as_biguint = BigUint::from_u8(message_bit).unwrap();
-
-        ciphertext += &two * r; // Add 2 * r
-        ciphertext += message_as_biguint; // Add the message bit
+        ciphertext = &ciphertext % &self.public_key[0];
 
         Some(ciphertext) // Return the calculated ciphertext
     }
+
+    pub fn decrypt(&self, ciphertext: BigUint) -> u8 {
+        let two = BigUint::from_u8(2).unwrap();
+
+        let c_mod_p: BigUint = &ciphertext % &self.secret_key;
+        let message_biguint: BigUint = &c_mod_p % &two;
+        
+        message_biguint.to_u8().unwrap_or_else(|| {
+            eprintln!("[WARN]: Decrypted message_bit was not 0 or 1, or failed to convert to u8. Defaulting to 0.");
+            0 
+        })
+    }
 }
 
-fn main() -> io::Result<()> {
+fn main() {
 
     // toy example
-    let lambda: u32 = 42;
-    let rho: u32 = 26;
-    let eta: u32 = 988;
-    let gamma: u32 = 147456;
-    let tau: u32 = 158;
+    // let lambda: u32 = 42;
+    // let rho: u32 = 26;
+    // let eta: u32 = 988;
+    // let gamma: u32 = 147456;
+    // let tau: u32 = 158;
+
+    // small example
+    let lambda: u32 = 52;
+    let rho: u32 = 41;
+    let eta: u32 = 1558;
+    let gamma: u32 = 843033;
+    let tau: u32 = 572;
+
+    // medium example
+    // let lambda: u32 = 62;
+    // let rho: u32 = 56;
+    // let eta: u32 = 2128;
+    // let gamma: u32 = 4251866;
+    // let tau: u32 = 2110;
+
+    // large example
+    // let lambda: u32 = 72;
+    // let rho: u32 = 71;
+    // let eta: u32 = 2698;
+    // let gamma: u32 = 19575950;
+    // let tau: u32 = 7659;
 
     let mut dghv_scheme: DGHV = DGHV::initialise(lambda, rho, eta, gamma, tau);
     dghv_scheme.generate_keys();
-    println!("Secret Key: {:?}", dghv_scheme.secret_key);
 
-    // Save public keu to file
-    let public_key_filepath: &'static str = "public.key";
-    let mut file: File = File::create(public_key_filepath)?;
-    for (i, component) in dghv_scheme.public_key.iter().enumerate() {
-        writeln!(file, "x_{}: {}", i, component)?;
+    let ct_0: Option<BigUint> = dghv_scheme.encrypt(0);
+    // let ct_1: Option<BigUint> = dghv_scheme.encrypt(0);
+
+    match ct_0 {
+        Some(ref val) => {
+            // println!("Encrypt(0) = {}", val);
+            let m_0 = dghv_scheme.decrypt(val.clone());
+            println!("Decrypt(Encrypt(0)) = {}", m_0)
+        },
+        None => println!("Encrypt(0) = None"),
     }
-    Ok(())
 }
