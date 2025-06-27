@@ -1,6 +1,6 @@
 use rand::Rng;
 use num_bigint::{BigUint, RandBigInt, RandomBits};
-use num_traits::{ConstZero, FromPrimitive, One};
+use num_traits::{ConstZero, FromPrimitive, One, Pow, Zero};
 use num_primes::Generator;
 
 use std::fs::File;
@@ -21,7 +21,7 @@ pub struct DGHV {
 impl DGHV {
     pub fn initialise(lambda: u32, rho: u32, eta: u32, gamma: u32, tau: u32) -> Self {
         // Initialises a DGHV scheme with the given parameters.
-        DGHV {lambda, rho, eta, gamma, tau, public_key: Vec::new(), secret_key: BigUint::ZERO}
+        DGHV {lambda, rho, eta, gamma, tau, public_key: Vec::new(), secret_key: BigUint::zero()}
     }
 
     // KeyGen
@@ -51,7 +51,7 @@ impl DGHV {
         loop {
              pk.clear();
 
-            let mut max: BigUint = BigUint::ZERO;
+            let mut max: BigUint = BigUint::zero();
             let mut max_i: usize = 0;
             for i in 0..self.tau {
                 let q_i: BigUint = rng.gen_biguint_below(&q_bound);
@@ -67,7 +67,7 @@ impl DGHV {
             }
 
             // make sure x_0 is odd
-            if &max % BigUint::from_u8(2).unwrap() == BigUint::ZERO {
+            if &max % BigUint::from_u8(2).unwrap() == BigUint::zero() {
                 max += BigUint::one();
             }
 
@@ -101,7 +101,7 @@ impl DGHV {
         }
 
         let mut rng = rand::thread_rng();
-        let mut ciphertext = BigUint::ZERO;
+        let mut ciphertext = BigUint::zero();
 
         // TODO: check if correct.
         // Subset choice
