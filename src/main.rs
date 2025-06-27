@@ -132,18 +132,18 @@ impl DGHV {
 fn main() {
 
     // toy example
-    // let lambda: u32 = 42;
-    // let rho: u32 = 26;
-    // let eta: u32 = 988;
-    // let gamma: u32 = 147456;
-    // let tau: u32 = 158;
+    let lambda: u32 = 42;
+    let rho: u32 = 26;
+    let eta: u32 = 988;
+    let gamma: u32 = 147456;
+    let tau: u32 = 158;
 
     // small example
-    let lambda: u32 = 52;
-    let rho: u32 = 41;
-    let eta: u32 = 1558;
-    let gamma: u32 = 843033;
-    let tau: u32 = 572;
+    // let lambda: u32 = 52;
+    // let rho: u32 = 41;
+    // let eta: u32 = 1558;
+    // let gamma: u32 = 843033;
+    // let tau: u32 = 572;
 
     // medium example
     // let lambda: u32 = 62;
